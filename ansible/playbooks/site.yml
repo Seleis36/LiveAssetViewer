@@ -1,0 +1,21 @@
+---
+# Full provisioning — run once after Terraform creates the instances (US-21 onwards)
+- name: Common setup (all instances)
+  hosts: all
+  roles:
+    - common
+
+- name: Deploy kdb+
+  hosts: role_kdb
+  roles:
+    - kdb
+
+- name: Deploy app (frontend + backend)
+  hosts: role_app
+  roles:
+    - app
+
+- name: Deploy SonarQube
+  hosts: role_sonar
+  roles:
+    - sonarqube

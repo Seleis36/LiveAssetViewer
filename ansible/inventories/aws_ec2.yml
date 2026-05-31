@@ -1,0 +1,10 @@
+plugin: amazon.aws.aws_ec2
+regions:
+  - eu-west-1
+filters:
+  tag:Env: production
+keyed_groups:
+  - key: tags.Role
+    prefix: role
+compose:
+  ansible_host: private_ip_address

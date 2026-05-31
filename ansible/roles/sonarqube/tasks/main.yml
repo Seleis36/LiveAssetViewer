@@ -1,0 +1,5 @@
+---
+# SonarQube role — placeholder (US-25)
+- name: Placeholder
+  ansible.builtin.debug:
+    msg: "sonarqube role not yet implemented — see US-25"
