@@ -1,0 +1,3 @@
+kdb_port: 5010
+kdb_data_dir: /data
+efs_mount_point: /data

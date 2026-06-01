@@ -1,0 +1,66 @@
+services:
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_WS_URL: ws://localhost:3000/ws
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      NODE_ENV: development
+      KDB_HOST: kdb
+      KDB_PORT: 5010
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      kdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  kdb:
+    build:
+      context: ./kdb
+    ports:
+      - "5010:5010"
+    volumes:
+      - kdb-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "q -p 5010 -e 'til 1' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  kdb-data:
+  redis-data:

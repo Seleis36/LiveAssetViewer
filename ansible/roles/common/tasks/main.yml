@@ -1,0 +1,5 @@
+---
+# Common role — placeholder (US-22)
+- name: Placeholder
+  ansible.builtin.debug:
+    msg: "common role not yet implemented — see US-22"

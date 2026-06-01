@@ -1,0 +1,2 @@
+aws_region: eu-west-1
+ecr_registry: "{{ lookup('env', 'ECR_REGISTRY') }}"
