@@ -1,2 +1,7 @@
-// Root module — modules wired in from US-14 onwards
-// See planning/user-stories.md Phase 5 for the full module list
+module "ssm" {
+  source      = "./modules/ssm"
+  environment = var.environment
+  kdb_host    = var.kdb_host
+  redis_url   = var.redis_url
+  sonar_token = var.sonar_token
+}
