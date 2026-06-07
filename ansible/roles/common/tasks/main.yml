@@ -1,5 +1,39 @@
 ---
-# Common role — placeholder (US-22)
-- name: Placeholder
-  ansible.builtin.debug:
-    msg: "common role not yet implemented — see US-22"
+- name: Install Docker
+  ansible.builtin.dnf:
+    name: docker
+    state: present
+
+- name: Start and enable Docker
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Install Docker Compose plugin
+  ansible.builtin.dnf:
+    name: docker-compose-plugin
+    state: present
+
+- name: Install CloudWatch Agent
+  ansible.builtin.dnf:
+    name: amazon-cloudwatch-agent
+    state: present
+
+- name: Configure CloudWatch Agent
+  ansible.builtin.template:
+    src: cw-agent-config.json.j2
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    owner: root
+    group: root
+    mode: '0644'
+  vars:
+    cw_log_group_suffix: "{{ group_names | select('match', '^role_') | first | replace('role_', '') }}"
+    instance_role: "{{ group_names | select('match', '^role_') | first | replace('role_', '') }}"
+  notify: restart cloudwatch agent
+
+- name: Start and enable CloudWatch Agent
+  ansible.builtin.systemd:
+    name: amazon-cloudwatch-agent
+    state: started
+    enabled: true
