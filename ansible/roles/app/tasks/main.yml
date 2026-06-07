@@ -1,5 +1,48 @@
 ---
-# App role — placeholder (US-24)
-- name: Placeholder
-  ansible.builtin.debug:
-    msg: "app role not yet implemented — see US-24"
+- name: Ensure deploy directory exists
+  ansible.builtin.file:
+    path: "{{ deploy_dir }}"
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: '0755'
+
+- name: Authenticate Docker to ECR
+  ansible.builtin.shell: >
+    aws ecr get-login-password --region {{ aws_region }}
+    | docker login --username AWS --password-stdin {{ ecr_registry }}
+  changed_when: true
+
+- name: Read SSM parameters
+  community.aws.aws_ssm_parameter_store:
+    name: "{{ item }}"
+    region: "{{ aws_region }}"
+  register: ssm_result
+  loop:
+    - /pv/redis/url
+    - /pv/kdb/host
+    - /pv/kdb/port
+  no_log: true
+
+- name: Write .env file for Docker Compose
+  ansible.builtin.template:
+    src: app.env.j2
+    dest: "{{ deploy_dir }}/.env"
+    owner: ec2-user
+    group: ec2-user
+    mode: '0600'
+  no_log: true
+
+- name: Write docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ deploy_dir }}/docker-compose.yml"
+    owner: ec2-user
+    group: ec2-user
+    mode: '0644'
+
+- name: Pull latest images and restart services
+  community.docker.docker_compose_v2:
+    project_src: "{{ deploy_dir }}"
+    pull: always
+    state: present
