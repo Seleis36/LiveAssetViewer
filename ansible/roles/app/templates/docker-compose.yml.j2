@@ -1,0 +1,13 @@
+services:
+  frontend:
+    image: "{{ ecr_registry }}/price-viewer/frontend:{{ image_tag | default('latest') }}"
+    restart: unless-stopped
+    ports:
+      - "{{ frontend_port }}:80"
+
+  backend:
+    image: "{{ ecr_registry }}/price-viewer/backend:{{ image_tag | default('latest') }}"
+    restart: unless-stopped
+    ports:
+      - "{{ backend_port }}:3000"
+    env_file: .env
