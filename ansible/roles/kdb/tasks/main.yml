@@ -1,5 +1,76 @@
 ---
-# kdb role — placeholder (US-23)
-- name: Placeholder
-  ansible.builtin.debug:
-    msg: "kdb role not yet implemented — see US-23"
+- name: Fetch kdb+ licence from Secrets Manager
+  community.aws.aws_secret:
+    name: "pv/kdb/license"
+    region: "{{ aws_region }}"
+  register: kdb_license_secret
+  no_log: true
+
+- name: Write kdb+ licence file
+  ansible.builtin.copy:
+    content: "{{ kdb_license_secret.secret }}"
+    dest: /opt/kdb/kc.lic
+    owner: root
+    group: root
+    mode: '0400'
+  no_log: true
+
+- name: Ensure EFS mount point exists
+  ansible.builtin.file:
+    path: "{{ efs_mount_point }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Mount EFS file system
+  ansible.posix.mount:
+    path: "{{ efs_mount_point }}"
+    src: "{{ efs_dns_name }}:/"
+    fstype: nfs4
+    opts: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
+    state: mounted
+
+- name: Create kdb+ data subdirectories
+  ansible.builtin.file:
+    path: "{{ efs_mount_point }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - hdb
+    - tp-log
+
+- name: Authenticate Docker to ECR
+  ansible.builtin.shell: >
+    aws ecr get-login-password --region {{ aws_region }}
+    | docker login --username AWS --password-stdin {{ ecr_registry }}
+  changed_when: false
+
+- name: Pull kdb+ image from ECR
+  community.docker.docker_image:
+    name: "{{ ecr_registry }}/price-viewer/kdb:{{ image_tag | default('latest') }}"
+    source: pull
+    force_source: true
+
+- name: Start kdb+ container
+  community.docker.docker_container:
+    name: kdb
+    image: "{{ ecr_registry }}/price-viewer/kdb:{{ image_tag | default('latest') }}"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "5010:5010"
+      - "5011:5011"
+    volumes:
+      - "/opt/kdb/kc.lic:/opt/kdb/kc.lic:ro"
+      - "{{ efs_mount_point }}:/data"
+    env:
+      QLIC: /opt/kdb
+    healthcheck:
+      test: ["CMD-SHELL", "q -p 5010 -e 'til 1' 2>/dev/null || exit 1"]
+      interval: "10s"
+      timeout: "5s"
+      retries: 5
+      start_period: "20s"
