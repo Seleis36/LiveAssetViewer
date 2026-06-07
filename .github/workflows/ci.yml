@@ -35,7 +35,7 @@ jobs:
       - name: Validate Terraform
         uses: opentofu/setup-opentofu@v1
         with:
-          tofu_version: 1.8.5
+          tofu_version: 1.9.1
       - run: cd infra && tofu init -backend=false && tofu validate
 
   # ---- TEST -------------------------------------------------
