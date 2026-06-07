@@ -6,25 +6,28 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "nodemon --exec ts-node src/server.ts",
-    "lint": "eslint src --ext .ts",
-    "test": "vitest run"
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "express": "^4.19.0",
-    "ws": "^8.17.0",
-    "node-q": "^2.5.0",
-    "ioredis": "^5.3.0",
-    "pino": "^9.2.0",
-    "pino-http": "^10.2.0"
+    "express": "^5.2.1",
+    "ioredis": "^5.11.0",
+    "node-q": "^2.7.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.0",
-    "@types/node": "^20.0.0",
-    "@types/ws": "^8.5.0",
-    "eslint": "^9.0.0",
-    "nodemon": "^3.0.0",
-    "ts-node": "^10.9.0",
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.12.4",
+    "@types/ws": "^8.18.1",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.60.0",
+    "vitest": "^4.1.7"
   }
 }

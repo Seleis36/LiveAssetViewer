@@ -1,5 +1,5 @@
 # Stage: dev — nodemon hot-reload for local development (docker compose up)
-FROM node:20-alpine AS dev
+FROM node:24-alpine AS dev
 WORKDIR /app
 RUN npm install -g nodemon
 COPY package*.json ./
@@ -9,15 +9,15 @@ EXPOSE 3000
 CMD ["nodemon", "--exec", "ts-node src/server.ts"]
 
 # Stage: builder — compile TypeScript
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --frozen-lockfile
+RUN npm ci
 COPY . .
 RUN npm run build
 
 # Stage: production — lean runtime
-FROM node:20-alpine
+FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/dist ./dist
