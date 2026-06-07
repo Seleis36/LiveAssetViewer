@@ -1,12 +1,11 @@
 // Canonical schema definitions — shared by all kdb+ processes
-// US-04 will populate these with full table definitions
 
 trade:([]
   time:`timestamp$();
   sym:`symbol$();
   price:`float$();
   size:`long$();
-  side:`symbol$()
+  side:`symbol$()    / `buy or `sell
 )
 
 bar:([]
@@ -17,4 +16,9 @@ bar:([]
   low:`float$();
   close:`float$();
   volume:`long$()
+)
+
+symbolRef:([]
+  sym:`symbol$();
+  description:`symbol$()
 )
