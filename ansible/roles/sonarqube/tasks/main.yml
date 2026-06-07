@@ -1,5 +1,53 @@
 ---
-# SonarQube role — placeholder (US-25)
-- name: Placeholder
-  ansible.builtin.debug:
-    msg: "sonarqube role not yet implemented — see US-25"
+# SonarQube Community Edition — runs as a container on ec2-sonar
+# Accessible on port 9000 from allowed CIDRs (enforced by sg-sonar).
+
+- name: Set vm.max_map_count for Elasticsearch inside SonarQube
+  ansible.posix.sysctl:
+    name: vm.max_map_count
+    value: "524288"
+    state: present
+    sysctl_set: true
+    reload: true
+
+- name: Set fs.file-max for SonarQube
+  ansible.posix.sysctl:
+    name: fs.file-max
+    value: "131072"
+    state: present
+    sysctl_set: true
+    reload: true
+
+- name: Create SonarQube install directory
+  ansible.builtin.file:
+    path: "{{ sonarqube_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create persistent Docker volumes for SonarQube
+  community.docker.docker_volume:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - "{{ sonarqube_data_volume }}"
+    - "{{ sonarqube_logs_volume }}"
+
+- name: Run SonarQube container
+  community.docker.docker_container:
+    name: sonarqube
+    image: "{{ sonarqube_image }}"
+    state: started
+    restart_policy: always
+    pull: true
+    ports:
+      - "{{ sonarqube_port }}:9000"
+    volumes:
+      - "{{ sonarqube_data_volume }}:/opt/sonarqube/data"
+      - "{{ sonarqube_logs_volume }}:/opt/sonarqube/logs"
+    ulimits:
+      - nofile:65536:65536
+    env:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "false"
+  notify: wait for sonarqube ready

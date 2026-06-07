@@ -1,0 +1,6 @@
+---
+sonarqube_image: sonarqube:community
+sonarqube_port: 9000
+sonarqube_data_volume: sonarqube_data
+sonarqube_logs_volume: sonarqube_logs
+sonarqube_install_dir: /opt/sonarqube

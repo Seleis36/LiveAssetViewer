@@ -1,0 +1,11 @@
+---
+- name: wait for sonarqube ready
+  ansible.builtin.uri:
+    url: "http://localhost:{{ sonarqube_port }}/api/system/status"
+    method: GET
+    status_code: 200
+    return_content: true
+  register: sonar_status
+  until: sonar_status.json.status is defined and sonar_status.json.status == 'UP'
+  retries: 30
+  delay: 10
