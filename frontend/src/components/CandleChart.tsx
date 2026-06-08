@@ -134,7 +134,7 @@ export default function CandleChart({ candles }: Props) {
           />
           <Bar
             dataKey="bodyHigh"
-            shape={(props: CandleShapeProps) => <CandleShape {...props} />}
+            shape={(props: unknown) => <CandleShape {...(props as CandleShapeProps)} />}
             isAnimationActive={false}
           >
             {rows.map((r, i) => (

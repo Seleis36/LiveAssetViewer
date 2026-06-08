@@ -5,10 +5,9 @@ vi.mock('../logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }))
 
-// Import after mocking
-const { dispatcher } = await import('./dispatcher')
+import { dispatcher } from './dispatcher'
 
-function makeWs(readyState = WebSocket.OPEN): WebSocket {
+function makeWs(readyState: number = WebSocket.OPEN): WebSocket {
   return { readyState, send: vi.fn() } as unknown as WebSocket
 }
 

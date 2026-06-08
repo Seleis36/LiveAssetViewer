@@ -6,7 +6,7 @@ class MockWebSocket {
   static OPEN = 1
   static CLOSED = 3
   readyState = MockWebSocket.OPEN
-  url: string
+  url!: string
   onopen: (() => void) | null = null
   onmessage: ((evt: { data: string }) => void) | null = null
   onerror: (() => void) | null = null
