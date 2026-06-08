@@ -18,6 +18,7 @@ function connectCb(attempt: number): void {
 
     connection = conn
     logger.info({ host: config.kdb.host, port: config.kdb.port }, 'kdb+ connected')
+    notifyConnected(conn)
 
     conn.on('error', (connErr) => {
       logger.warn({ err: connErr }, 'kdb+ connection error, reconnecting')
@@ -59,6 +60,19 @@ export function isKdbConnected(): boolean {
   return connection !== null
 }
 
+type ConnectedCallback = (conn: Connection) => void
+const onConnectCallbacks: ConnectedCallback[] = []
+
+export function onKdbConnect(cb: ConnectedCallback): void {
+  if (connection) { cb(connection); return }
+  onConnectCallbacks.push(cb)
+}
+
 export function initKdb(): void {
   connectCb(0)
+}
+
+function notifyConnected(conn: Connection): void {
+  for (const cb of onConnectCallbacks) cb(conn)
+  onConnectCallbacks.length = 0
 }

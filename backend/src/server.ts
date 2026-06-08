@@ -1,9 +1,12 @@
+import http from 'http'
 import express from 'express'
 import { Redis } from 'ioredis'
 import pinoHttp from 'pino-http'
 import { config } from './config'
 import { logger } from './logger'
-import { initKdb } from './kdb/client'
+import { initKdb, onKdbConnect } from './kdb/client'
+import { startSubscriber } from './kdb/subscriber'
+import { attachWsServer } from './ws/wsServer'
 import healthRouter from './routes/health'
 import historyRouter from './routes/history'
 import { createSymbolsRouter } from './routes/symbols'
@@ -24,18 +27,21 @@ app.use(
 )
 
 const redis = new Redis(config.redis.url, { lazyConnect: true })
-
 redis.on('error', (err) => logger.warn({ err }, 'Redis error'))
 
 app.use(healthRouter)
 app.use(historyRouter)
 app.use(createSymbolsRouter(redis))
 
+const httpServer = http.createServer(app)
+attachWsServer(httpServer)
+
 async function start(): Promise<void> {
   await redis.connect()
   initKdb()
+  onKdbConnect((conn) => startSubscriber(conn))
 
-  app.listen(config.port, () => {
+  httpServer.listen(config.port, () => {
     logger.info({ port: config.port }, 'Backend listening')
   })
 }
@@ -45,4 +51,4 @@ start().catch((err) => {
   process.exit(1)
 })
 
-export { app }
+export { app, httpServer }
