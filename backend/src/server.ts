@@ -1,6 +1,6 @@
 import express from 'express'
 import { Redis } from 'ioredis'
-import { pinoHttp } from 'pino-http'
+import pinoHttp from 'pino-http'
 import { config } from './config'
 import { logger } from './logger'
 import { initKdb } from './kdb/client'
@@ -11,7 +11,17 @@ import { createSymbolsRouter } from './routes/symbols'
 const app = express()
 
 app.use(express.json())
-app.use(pinoHttp({ logger }))
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => (req.headers['x-request-id'] as string) ?? crypto.randomUUID(),
+    customLogLevel: (_req, res) => (res.statusCode >= 500 ? 'error' : 'info'),
+    serializers: {
+      req: (req) => ({ method: req.method, url: req.url, requestId: req.id }),
+      res: (res) => ({ statusCode: res.statusCode }),
+    },
+  }),
+)
 
 const redis = new Redis(config.redis.url, { lazyConnect: true })
 

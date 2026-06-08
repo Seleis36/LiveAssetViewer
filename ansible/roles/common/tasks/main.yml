@@ -32,13 +32,16 @@
     name: amazon-cloudwatch-agent
     state: present
 
-- name: Deploy CloudWatch Agent config
+- name: Configure CloudWatch Agent
   ansible.builtin.template:
     src: cw-agent-config.json.j2
     dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
     owner: root
     group: root
     mode: "0644"
+  vars:
+    cw_log_group_suffix: "{{ group_names | select('match', '^role_') | first | replace('role_', '') }}"
+    instance_role: "{{ group_names | select('match', '^role_') | first | replace('role_', '') }}"
   notify: restart cloudwatch agent
 
 - name: Start and enable CloudWatch Agent
