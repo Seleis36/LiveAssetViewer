@@ -25,7 +25,8 @@ interface ChartRow {
   bullish: boolean
 }
 
-function toRows(candles: Candle[]): ChartRow[] {
+// eslint-disable-next-line react-refresh/only-export-components
+export function toRows(candles: Candle[]): ChartRow[] {
   return candles.map((c) => {
     const bullish = c.c >= c.o
     return {
@@ -56,7 +57,8 @@ interface CandleShapeProps {
 }
 
 // Custom shape that draws full candle: wick line + body rect
-const CandleShape = (props: CandleShapeProps) => {
+// eslint-disable-next-line react-refresh/only-export-components
+export const CandleShape = (props: CandleShapeProps) => {
   const { x, width, wickLow, wickHigh, bodyLow, bodyHigh, bullish, yAxis } = props
   if (!yAxis) return null
 

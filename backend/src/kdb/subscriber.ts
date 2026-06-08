@@ -3,8 +3,6 @@ import { logger } from '../logger'
 import { dispatcher } from '../ws/dispatcher'
 import { queryHistory } from './queries'
 
-const GRAN_NS = 60_000_000_000 // 1-minute default for live updates
-
 export function startSubscriber(conn: Connection): void {
   conn.ks('.u.sub[`trade;`]', (err) => {
     if (err) {
