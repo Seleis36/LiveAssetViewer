@@ -40,11 +40,10 @@ services:
     ports:
       - "5010:5010"
     volumes:
-      # q binary and q.k mounted directly from host — set QBIN and QHOME in .env
+      # q binary mounted directly from host — set QBIN in .env
       - ${QBIN}:/usr/local/bin/q:ro
-      - ${QHOME}/q.k:/usr/local/bin/q.k:ro
-      # kdb+ license
-      - ${QLIC_FILE}:/opt/kdb/kc.lic:ro
+      # kdb+ license — derived from QHOME (avoids ~ expansion issues with QLIC_FILE)
+      - ${QHOME}/kc.lic:/opt/kdb/kc.lic:ro
       # q scripts and startup
       - ./kdb/q:/q/q:ro
       - ./kdb/scripts/startup.sh:/startup.sh:ro
@@ -53,10 +52,10 @@ services:
     environment:
       QHOME: /usr/local/bin
       QLIC: /opt/kdb
-    working_dir: /q
+    working_dir: /q/q
     entrypoint: ["/bin/sh", "/startup.sh"]
     healthcheck:
-      test: ["CMD-SHELL", "q -p 5010 -e 'til 1' 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/5010' 2>/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5

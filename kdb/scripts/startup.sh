@@ -1,16 +1,17 @@
 #!/bin/sh
 set -e
 
-# Start tickerplant in the background, then start the RDB
-q q/tick.q sym /data/tp-log -p 5010 &
+mkdir -p /data/tp-log
+
+q /q/q/tick.q -p 5010 sym /data/tp-log &
 TP_PID=$!
 
 sleep 2
 
-q q/r.q localhost 5010 -p 5011 &
+q /q/q/r.q -p 5011 localhost 5010 &
 RDB_PID=$!
 
-# Start synthetic feed
-q q/feed/synthetic.q localhost 5010
+q /q/q/feed/synthetic.q -p 5012 localhost 5010 &
+FEED_PID=$!
 
-wait $TP_PID $RDB_PID
+wait $TP_PID $RDB_PID $FEED_PID
