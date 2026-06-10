@@ -36,12 +36,25 @@ services:
         condition: service_healthy
 
   kdb:
-    build:
-      context: ./kdb
+    image: debian:bookworm-slim
     ports:
       - "5010:5010"
     volumes:
+      # q binary and q.k mounted directly from host — set QBIN and QHOME in .env
+      - ${QBIN}:/usr/local/bin/q:ro
+      - ${QHOME}/q.k:/usr/local/bin/q.k:ro
+      # kdb+ license
+      - ${QLIC_FILE}:/opt/kdb/kc.lic:ro
+      # q scripts and startup
+      - ./kdb/q:/q/q:ro
+      - ./kdb/scripts/startup.sh:/startup.sh:ro
+      # persistent tickerplant log
       - kdb-data:/data
+    environment:
+      QHOME: /usr/local/bin
+      QLIC: /opt/kdb
+    working_dir: /q
+    entrypoint: ["/bin/sh", "/startup.sh"]
     healthcheck:
       test: ["CMD-SHELL", "q -p 5010 -e 'til 1' 2>/dev/null || exit 1"]
       interval: 10s
