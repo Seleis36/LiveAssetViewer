@@ -17,6 +17,9 @@ terraform.tfvars.local
 *.retry
 .vault_pass
 
+# kdb+ binaries (downloaded locally, not committed)
+kdb/bin/
+
 # OS
 .DS_Store
 Thumbs.db
