@@ -13,7 +13,7 @@ genTrade:{[s]
   (.z.p; s; px; sz; side)
  }
 
-/ use (host; port) tuple — works in all kdb+ 4.x versions
+/ hopen needs the `$":host:port" symbol form — the (host; port) tuple throws 'type here
 tpConn: `$":", .z.x[0], ":", .z.x[1]
 tpHandle: 0N
 
@@ -25,7 +25,11 @@ tpHandle: 0N
 
 .feed.connect[]
 
+/ reconnect if the tickerplant drops the connection
+.z.pc:{[h] if[h=tpHandle; tpHandle:: 0N; .feed.connect[]]}
+
 .z.ts:{
+  if[null tpHandle; :()];
   ticks: genTrade each syms;
   t:([] time:`timestamp$ticks[;0]; sym:`symbol$ticks[;1]; price:`float$ticks[;2]; size:`long$ticks[;3]; side:`symbol$ticks[;4]);
   tpHandle (`.u.upd; `trade; t);

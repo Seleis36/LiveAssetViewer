@@ -34,11 +34,17 @@ export const useMarketStore = create<MarketStore>((set) => ({
   updateLastCandle: (candle) =>
     set((state) => {
       if (state.candles.length === 0) return { candles: [candle] }
-      const last = state.candles[state.candles.length - 1]
-      if (last.t === candle.t) {
-        return { candles: [...state.candles.slice(0, -1), candle] }
+      const idx = state.candles.findIndex((c) => c.t === candle.t)
+      if (idx >= 0) {
+        const next = [...state.candles]
+        next[idx] = candle
+        return { candles: next }
       }
-      return { candles: [...state.candles, candle] }
+      // ISO timestamps compare lexicographically; ignore stale out-of-order bars
+      if (candle.t > state.candles[state.candles.length - 1].t) {
+        return { candles: [...state.candles, candle] }
+      }
+      return {}
     }),
 
   clearCandles: () => set({ candles: [] }),

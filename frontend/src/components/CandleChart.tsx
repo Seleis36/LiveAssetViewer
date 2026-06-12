@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import {
   ComposedChart,
   Bar,
@@ -14,7 +15,6 @@ import { Candle } from '../api/client'
 interface ChartRow {
   time: number
   label: string
-  // candle body: [low, high] range with open/close stored as extras
   bodyLow: number
   bodyHigh: number
   wickLow: number
@@ -47,50 +47,53 @@ export function toRows(candles: Candle[]): ChartRow[] {
 interface CandleShapeProps {
   x: number
   width: number
+  y: number
+  height: number
   wickLow: number
   wickHigh: number
   bodyLow: number
   bodyHigh: number
   bullish: boolean
-  yAxis?: { scale: (v: number) => number }
   [key: string]: unknown
 }
 
-// Custom shape that draws full candle: wick line + body rect
+// In Recharts v3, shape functions receive x/y/width/height (pixel coords for the bar)
+// plus all data attributes. No yAxis.scale — derive the scale from y, height, bodyHigh, priceMin.
+//
+// With domain=[priceMin, priceMax], Recharts sets baseValue = priceMin, so:
+//   y         = pixel(bodyHigh)
+//   y+height  = pixel(priceMin)
+// → toY(v) = y + height * (v - bodyHigh) / (priceMin - bodyHigh)
 // eslint-disable-next-line react-refresh/only-export-components
-export const CandleShape = (props: CandleShapeProps) => {
-  const { x, width, wickLow, wickHigh, bodyLow, bodyHigh, bullish, yAxis } = props
-  if (!yAxis) return null
+export function makeCandleShape(priceMin: number) {
+  return function CandleShape(props: CandleShapeProps) {
+    const { x, y, width, height, wickLow, wickHigh, bodyLow, bodyHigh, bullish } = props
 
-  const color = bullish ? '#26a69a' : '#ef5350'
-  const cx = x + width / 2
+    if (!height || height <= 0 || priceMin >= bodyHigh) return null
 
-  // Map data values to pixel y (yAxis.scale is the d3 scale)
-  const toY = (v: number) => yAxis.scale(v)
+    const toY = (v: number) => y + height * (v - bodyHigh) / (priceMin - bodyHigh)
 
-  const wickY1 = toY(wickHigh)
-  const wickY2 = toY(wickLow)
-  const bodyY1 = toY(bodyHigh)
-  const bodyY2 = toY(bodyLow)
-  const bodyH = Math.max(1, bodyY2 - bodyY1)
-  const bodyW = Math.max(2, width * 0.6)
+    const color = bullish ? '#26a69a' : '#ef5350'
+    const cx = x + width / 2
+    const bodyW = Math.max(2, width * 0.6)
+    const bodyTop = toY(bodyHigh)
+    const bodyBot = toY(bodyLow)
 
-  return (
-    <g>
-      {/* wick */}
-      <line x1={cx} y1={wickY1} x2={cx} y2={wickY2} stroke={color} strokeWidth={1} />
-      {/* body */}
-      <rect
-        x={cx - bodyW / 2}
-        y={bodyY1}
-        width={bodyW}
-        height={bodyH}
-        fill={color}
-        stroke={color}
-        strokeWidth={0.5}
-      />
-    </g>
-  )
+    return (
+      <g>
+        <line x1={cx} y1={toY(wickHigh)} x2={cx} y2={toY(wickLow)} stroke={color} strokeWidth={1} />
+        <rect
+          x={cx - bodyW / 2}
+          y={bodyTop}
+          width={bodyW}
+          height={Math.max(1, bodyBot - bodyTop)}
+          fill={color}
+          stroke={color}
+          strokeWidth={0.5}
+        />
+      </g>
+    )
+  }
 }
 
 interface Props {
@@ -98,11 +101,16 @@ interface Props {
 }
 
 export default function CandleChart({ candles }: Props) {
-  if (candles.length === 0) {
+  const rows = toRows(candles)
+
+  const priceMin = rows.length > 0 ? Math.min(...rows.map((r) => r.wickLow)) * 0.9998 : 0
+  const priceMax = rows.length > 0 ? Math.max(...rows.map((r) => r.wickHigh)) * 1.0002 : 100
+
+  const candleShape = useMemo(() => makeCandleShape(priceMin), [priceMin])
+
+  if (rows.length === 0) {
     return <div style={{ color: '#666', textAlign: 'center', padding: '3rem' }}>No data</div>
   }
-
-  const rows = toRows(candles)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '0 1rem 1rem' }}>
@@ -112,8 +120,7 @@ export default function CandleChart({ candles }: Props) {
           <CartesianGrid strokeDasharray="3 3" stroke="#222" />
           <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} minTickGap={40} />
           <YAxis
-            dataKey="bodyLow"
-            domain={['auto', 'auto']}
+            domain={[priceMin, priceMax]}
             tick={{ fill: '#888', fontSize: 11 }}
             width={70}
             tickFormatter={(v) => v.toFixed(2)}
@@ -134,7 +141,8 @@ export default function CandleChart({ candles }: Props) {
           />
           <Bar
             dataKey="bodyHigh"
-            shape={(props: unknown) => <CandleShape {...(props as CandleShapeProps)} />}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            shape={candleShape as any}
             isAnimationActive={false}
           >
             {rows.map((r, i) => (
@@ -148,7 +156,13 @@ export default function CandleChart({ candles }: Props) {
       <ResponsiveContainer width="100%" height={80}>
         <ComposedChart data={rows} margin={{ top: 0, right: 16, bottom: 0, left: 8 }}>
           <XAxis dataKey="label" hide />
-          <YAxis tick={{ fill: '#888', fontSize: 10 }} width={70} tickFormatter={(v) => (v / 1e6).toFixed(1) + 'M'} />
+          <YAxis
+            tick={{ fill: '#888', fontSize: 10 }}
+            width={70}
+            tickFormatter={(v) =>
+              v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : String(v)
+            }
+          />
           <Bar dataKey="volume" isAnimationActive={false} maxBarSize={12}>
             {rows.map((r, i) => (
               <Cell key={i} fill={r.bullish ? '#1a5c5833' : '#5c1a1a33'} stroke={r.bullish ? '#26a69a' : '#ef5350'} strokeWidth={1} />

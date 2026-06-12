@@ -27,3 +27,6 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Vendor kdb+ installer (downloaded locally, not committed)
+install_kdb.sh

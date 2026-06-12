@@ -38,13 +38,20 @@ export function querySymbols(): Promise<KdbSymbol[]> {
   return kQuery<KdbSymbol[]>('select sym, description from symbolRef')
 }
 
-export function queryHistory(
+export async function queryHistory(
   sym: string,
   granularity: string,
   from: Date,
   to: Date,
 ): Promise<KdbBar[]> {
   const gran = GRAN_MAP[granularity]
-  if (!gran) return Promise.reject(new Error(`Unsupported granularity: ${granularity}`))
-  return kQuery<KdbBar[]>('buildBars', sym, gran, from, to)
+  if (!gran) throw new Error(`Unsupported granularity: ${granularity}`)
+  const bars = await kQuery<KdbBar[]>('buildBars', sym, gran, from, to)
+  // node-q deserializes kdb's int64 nanosecond timestamps through a float64,
+  // so exact bar boundaries can come back 1ms early (e.g. 15:40:59.999).
+  // Bars are always second-aligned — round to the nearest second.
+  return bars.map((b) => ({
+    ...b,
+    time: new Date(Math.round(b.time.getTime() / 1000) * 1000),
+  }))
 }

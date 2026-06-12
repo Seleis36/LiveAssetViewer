@@ -4,6 +4,7 @@ import { logger } from '../logger'
 import { dispatcher } from './dispatcher'
 
 const PING_INTERVAL_MS = 30_000
+const VALID_GRANULARITIES = new Set(['1m', '5m', '15m', '1h', '1d'])
 
 export function attachWsServer(httpServer: Server): void {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
@@ -38,9 +39,13 @@ export function attachWsServer(httpServer: Server): void {
       }
 
       if (msg.type === 'subscribe') {
-        if (symbol) dispatcher.unsubscribe(symbol, ws)
-        symbol = msg.symbol as string
         const granularity = (msg.granularity as string) ?? '1m'
+        if (typeof msg.symbol !== 'string' || msg.symbol.length === 0 || !VALID_GRANULARITIES.has(granularity)) {
+          ws.send(JSON.stringify({ type: 'error', code: 'BAD_SUBSCRIBE', message: 'symbol must be a non-empty string and granularity one of 1m,5m,15m,1h,1d' }))
+          return
+        }
+        if (symbol) dispatcher.unsubscribe(symbol, ws)
+        symbol = msg.symbol
         dispatcher.subscribe(symbol, granularity, ws)
         logger.info({ symbol, granularity }, 'ws subscribe')
         return

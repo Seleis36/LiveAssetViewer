@@ -23,11 +23,18 @@ class Dispatcher {
     if (set.size === 0) this.subs.delete(symbol)
   }
 
-  fanOut(sym: string, candle: Record<string, unknown>): void {
+  granularitiesFor(sym: string): string[] {
+    const set = this.subs.get(sym)
+    if (!set) return []
+    return [...new Set([...set].map((s) => s.granularity))]
+  }
+
+  fanOut(sym: string, granularity: string, candle: Record<string, unknown>): void {
     const set = this.subs.get(sym)
     if (!set || set.size === 0) return
-    const msg = JSON.stringify({ type: 'candle_update', sym, candle })
+    const msg = JSON.stringify({ type: 'candle_update', sym, granularity, candle })
     for (const sub of set) {
+      if (sub.granularity !== granularity) continue
       if (sub.ws.readyState === WebSocket.OPEN) {
         sub.ws.send(msg, (err) => {
           if (err) logger.error({ err, sym }, 'ws send error')

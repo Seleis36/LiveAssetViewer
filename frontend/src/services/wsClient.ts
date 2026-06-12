@@ -21,29 +21,36 @@ class WsClient {
   private destroyed = false
 
   connect(wsUrl: string): void {
-    if (this.destroyed) return
+    this.destroyed = false
     useConnectionStore.getState().setStatus('connecting')
 
-    this.ws = new WebSocket(wsUrl)
+    const sock = new WebSocket(wsUrl)
+    this.ws = sock
 
-    this.ws.onopen = () => {
+    sock.onopen = () => {
+      if (this.ws !== sock) return
       this.delay = BASE_DELAY_MS
       useConnectionStore.getState().setStatus('open')
       if (this.symbol) this.sendSubscribe()
       this.startPing()
     }
 
-    this.ws.onmessage = (evt) => {
+    sock.onmessage = (evt) => {
+      if (this.ws !== sock) return
       let msg: WsMessage
       try { msg = JSON.parse(evt.data as string) } catch { return }
       this.handle(msg)
     }
 
-    this.ws.onerror = () => {
+    sock.onerror = () => {
+      if (this.ws !== sock) return
       useConnectionStore.getState().setStatus('error')
     }
 
-    this.ws.onclose = () => {
+    sock.onclose = () => {
+      // a superseded socket (StrictMode remount, manual reconnect) must not
+      // touch state or schedule reconnects — only the current one may
+      if (this.ws !== sock) return
       this.stopPing()
       if (this.destroyed) return
       useConnectionStore.getState().setStatus('closed')
@@ -71,8 +78,12 @@ class WsClient {
   private handle(msg: WsMessage): void {
     const store = useMarketStore.getState()
     if (msg.type === 'snapshot') {
+      if (msg.sym !== this.symbol) return
       store.pushCandles(msg.candles as Candle[])
     } else if (msg.type === 'candle_update') {
+      // drop updates from a previous subscription still in flight
+      if (msg.sym !== this.symbol) return
+      if (msg.granularity && msg.granularity !== this.granularity) return
       store.updateLastCandle(msg.candle as Candle)
     }
   }

@@ -15,9 +15,12 @@
   .u.w[t]: .u.w[t], enlist (h; s);
  }
 
-buildBars:{[sym;gran;startTime;endTime]
+/ NB: param must not be named `sym` — inside q-sql the column shadows it
+/ and `where sym=sym` matches every row
+buildBars:{[s;gran;startTime;endTime]
+  s: $[10h=abs type s; `$s; s];  / node-q sends JS strings as char lists
   gran: `long$ gran;
-  data:select from trade where sym=sym,time within (startTime;endTime);
+  data:select from trade where sym=s,time within (startTime;endTime);
   if[0=count data;:0#bar];
   0! select open:first price,high:max price,low:min price,close:last price,volume:sum size
      by time:gran xbar time,sym

@@ -70,10 +70,11 @@ describe('wsClient — connect', () => {
     expect(useConnectionStore.getState().status).toBe('open')
   })
 
-  it('does nothing when destroyed', () => {
-    ;(wsClient as unknown as { destroyed: boolean }).destroyed = true
+  it('reconnects even after destroyed (supports React StrictMode remount)', () => {
     wsClient.connect('ws://localhost:3000/ws')
-    expect(useConnectionStore.getState().status).toBe('closed')
+    wsClient.destroy()
+    wsClient.connect('ws://localhost:3000/ws')
+    expect(useConnectionStore.getState().status).toBe('connecting')
   })
 })
 
@@ -108,26 +109,61 @@ describe('wsClient — onerror / onclose', () => {
 })
 
 describe('wsClient — messages', () => {
-  it('handles snapshot message', () => {
+  it('handles snapshot message for the subscribed symbol', () => {
     wsClient.connect('ws://localhost:3000/ws')
     lastWs.onopen!()
+    wsClient.subscribe('AAPL', '1m')
     const candles = [{ t: '2025-01-01T00:00:00Z', o: 100, h: 110, l: 95, c: 105, v: 1000 }]
-    lastWs.onmessage!({ data: JSON.stringify({ type: 'snapshot', candles }) })
+    lastWs.onmessage!({ data: JSON.stringify({ type: 'snapshot', sym: 'AAPL', candles }) })
     expect(useMarketStore.getState().candles).toHaveLength(1)
   })
 
-  it('handles candle_update message', () => {
+  it('handles candle_update message for the subscribed symbol', () => {
     wsClient.connect('ws://localhost:3000/ws')
     lastWs.onopen!()
+    wsClient.subscribe('AAPL', '1m')
     const candle = { t: '2025-01-01T00:00:00Z', o: 100, h: 110, l: 95, c: 105, v: 1000 }
-    lastWs.onmessage!({ data: JSON.stringify({ type: 'candle_update', candle }) })
+    lastWs.onmessage!({ data: JSON.stringify({ type: 'candle_update', sym: 'AAPL', granularity: '1m', candle }) })
     expect(useMarketStore.getState().candles).toHaveLength(1)
+  })
+
+  it('drops candle_update for a different symbol', () => {
+    wsClient.connect('ws://localhost:3000/ws')
+    lastWs.onopen!()
+    wsClient.subscribe('AAPL', '1m')
+    const candle = { t: '2025-01-01T00:00:00Z', o: 67000, h: 67100, l: 66900, c: 67050, v: 1000 }
+    lastWs.onmessage!({ data: JSON.stringify({ type: 'candle_update', sym: 'BTCUSD', granularity: '1m', candle }) })
+    expect(useMarketStore.getState().candles).toHaveLength(0)
+  })
+
+  it('drops candle_update for a different granularity', () => {
+    wsClient.connect('ws://localhost:3000/ws')
+    lastWs.onopen!()
+    wsClient.subscribe('AAPL', '15m')
+    const candle = { t: '2025-01-01T00:00:00Z', o: 100, h: 110, l: 95, c: 105, v: 1000 }
+    lastWs.onmessage!({ data: JSON.stringify({ type: 'candle_update', sym: 'AAPL', granularity: '1m', candle }) })
+    expect(useMarketStore.getState().candles).toHaveLength(0)
   })
 
   it('ignores invalid JSON messages', () => {
     wsClient.connect('ws://localhost:3000/ws')
     lastWs.onopen!()
     expect(() => lastWs.onmessage!({ data: 'not json' })).not.toThrow()
+  })
+})
+
+describe('wsClient — stale sockets', () => {
+  it('ignores close events from a superseded socket', () => {
+    vi.useFakeTimers()
+    wsClient.connect('ws://localhost:3000/ws')
+    const first = lastWs
+    wsClient.destroy()
+    wsClient.connect('ws://localhost:3000/ws')
+    // first socket finally closes — must not flip status or schedule a reconnect
+    first.onclose!()
+    expect(useConnectionStore.getState().status).toBe('connecting')
+    vi.advanceTimersByTime(60_000)
+    expect(lastWs).not.toBe(first)
   })
 })
 

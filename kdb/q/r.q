@@ -2,12 +2,14 @@
 \l schemas.q
 \l bars.q
 
-/ use (host; port) tuple — works in all kdb+ 4.x versions
+/ hopen needs the `$":host:port" symbol form — the (host; port) tuple throws 'type here
 .rdb.tpConn: `$":", .z.x[0], ":", .z.x[1]
 .rdb.tpHandle: 0N
 .rdb.delay: 1000
 
-.z.upd:{[t;x] t insert x}
+/ the TP publishes async calls to global `upd` — define both forms
+upd:{[t;x] t insert x}
+.z.upd: upd
 
 .rdb.reconnect:{[]
   .rdb.delay: 1000;

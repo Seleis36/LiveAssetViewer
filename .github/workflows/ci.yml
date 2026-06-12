@@ -71,7 +71,12 @@ jobs:
   sonarqube:
     runs-on: ubuntu-latest
     needs: test
-    if: ${{ vars.SONAR_ENABLED == 'true' || (secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '') }}
+    # NB: the `secrets` context cannot be used in `if` conditions —
+    # secrets are mapped to env vars and the steps skip themselves
+    # when SONAR_TOKEN / SONAR_HOST_URL are not configured
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,18 +87,12 @@ jobs:
           name: coverage
 
       - name: SonarQube scan
-        if: ${{ secrets.SONAR_TOKEN != '' }}
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' }}
         uses: SonarSource/sonarqube-scan-action@v3
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: SonarQube quality gate
-        if: ${{ secrets.SONAR_TOKEN != '' }}
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' }}
         uses: SonarSource/sonarqube-quality-gate-action@v1
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
   # ---- BUILD & DEPLOY (disabled — no OIDC provider available) ----
   # AWS deployment is performed manually using local credentials:

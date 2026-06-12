@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
-import CandleChart, { toRows, CandleShape } from './CandleChart'
+import CandleChart, { toRows, makeCandleShape } from './CandleChart'
 import type { Candle } from '../api/client'
 
 const candles: Candle[] = [
@@ -60,70 +60,46 @@ describe('toRows', () => {
   })
 })
 
-describe('CandleShape', () => {
-  const mockScale = (v: number) => v * 2
+// priceMin=85, bodyHigh=105: scale maps [85..105] → pixel [y+height..y]
+// toY(v) = y + height * (v - bodyHigh) / (priceMin - bodyHigh)
+// toY(105) = 10+0 = 10 (=y), toY(85) = 10+100 = 110 (=y+height)
+const baseProps = {
+  x: 10, y: 10, width: 20, height: 100,
+  wickLow: 90, wickHigh: 110,
+  bodyLow: 100, bodyHigh: 105,
+}
 
-  it('returns null when no yAxis provided', () => {
-    const { container } = render(
-      <svg>
-        <CandleShape x={10} width={20} wickLow={90} wickHigh={110} bodyLow={100} bodyHigh={105} bullish={true} />
-      </svg>,
-    )
+describe('makeCandleShape', () => {
+  it('returns null when height is zero', () => {
+    const Shape = makeCandleShape(85)
+    const { container } = render(<svg><Shape {...baseProps} height={0} bullish={true} /></svg>)
+    expect(container.querySelector('g')).toBeNull()
+  })
+
+  it('returns null when priceMin equals bodyHigh (degenerate scale)', () => {
+    const Shape = makeCandleShape(105)
+    const { container } = render(<svg><Shape {...baseProps} bullish={true} /></svg>)
     expect(container.querySelector('g')).toBeNull()
   })
 
   it('renders wick and body for bullish candle', () => {
-    const { container } = render(
-      <svg>
-        <CandleShape
-          x={10}
-          width={20}
-          wickLow={90}
-          wickHigh={110}
-          bodyLow={100}
-          bodyHigh={105}
-          bullish={true}
-          yAxis={{ scale: mockScale }}
-        />
-      </svg>,
-    )
+    const Shape = makeCandleShape(85)
+    const { container } = render(<svg><Shape {...baseProps} bullish={true} /></svg>)
     expect(container.querySelector('line')).toBeTruthy()
     expect(container.querySelector('rect')).toBeTruthy()
     expect(container.querySelector('line')?.getAttribute('stroke')).toBe('#26a69a')
   })
 
   it('renders bearish candle with red color', () => {
-    const { container } = render(
-      <svg>
-        <CandleShape
-          x={10}
-          width={20}
-          wickLow={90}
-          wickHigh={110}
-          bodyLow={100}
-          bodyHigh={105}
-          bullish={false}
-          yAxis={{ scale: mockScale }}
-        />
-      </svg>,
-    )
+    const Shape = makeCandleShape(85)
+    const { container } = render(<svg><Shape {...baseProps} bullish={false} /></svg>)
     expect(container.querySelector('line')?.getAttribute('stroke')).toBe('#ef5350')
   })
 
   it('handles equal open and close (doji)', () => {
+    const Shape = makeCandleShape(85)
     const { container } = render(
-      <svg>
-        <CandleShape
-          x={10}
-          width={20}
-          wickLow={90}
-          wickHigh={110}
-          bodyLow={100}
-          bodyHigh={100}
-          bullish={true}
-          yAxis={{ scale: mockScale }}
-        />
-      </svg>,
+      <svg><Shape {...baseProps} bodyLow={105} bodyHigh={105} bullish={true} /></svg>
     )
     const rect = container.querySelector('rect')
     expect(Number(rect?.getAttribute('height'))).toBeGreaterThanOrEqual(1)
