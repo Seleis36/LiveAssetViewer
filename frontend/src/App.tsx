@@ -6,7 +6,11 @@ import CandleChart from './components/CandleChart'
 import { wsClient } from './services/wsClient'
 import { fetchSymbols, fetchHistory, type Symbol } from './api/client'
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:3000/ws'
+// in production (served behind the ALB) no build-time URL is set —
+// derive the same-origin /ws endpoint from the page location
+const WS_URL =
+  import.meta.env.VITE_WS_URL ||
+  `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
 
 export default function App() {
   const [symbols, setSymbols] = useState<Symbol[]>([])

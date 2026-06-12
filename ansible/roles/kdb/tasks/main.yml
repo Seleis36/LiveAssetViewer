@@ -69,7 +69,8 @@
     env:
       QLIC: /opt/kdb
     healthcheck:
-      test: ["CMD-SHELL", "q -p 5010 -e 'til 1' 2>/dev/null || exit 1"]
+      # TCP probe — starting a second q process would fail (port already taken)
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/5010' || exit 1"]
       interval: "10s"
       timeout: "5s"
       retries: 5

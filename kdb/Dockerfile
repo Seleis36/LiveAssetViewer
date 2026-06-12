@@ -27,7 +27,8 @@ EXPOSE 5010
 
 VOLUME ["/data"]
 
-HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
-    CMD q -p 5010 -e "til 1" 2>/dev/null || exit 1
+# TCP probe — starting a second q process would fail (port already taken)
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=20s \
+    CMD bash -c '</dev/tcp/127.0.0.1/5010' || exit 1
 
 CMD ["./startup.sh"]
