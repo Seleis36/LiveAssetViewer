@@ -5,7 +5,7 @@ export const config = {
   },
   kdb: {
     host: process.env.KDB_HOST ?? 'localhost',
-    port: parseInt(process.env.KDB_PORT ?? '5000', 10),
+    port: parseInt(process.env.KDB_PORT ?? '5010', 10),
   },
   nodeEnv: process.env.NODE_ENV ?? 'development',
 } as const

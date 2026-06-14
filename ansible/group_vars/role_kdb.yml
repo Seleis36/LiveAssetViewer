@@ -1,3 +1,6 @@
 kdb_port: 5010
 kdb_data_dir: /data
 efs_mount_point: /data
+# efs_dns_name is set at deploy time via -e or from Terraform outputs
+# e.g. <fs-id>.efs.us-east-1.amazonaws.com
+efs_dns_name: "{{ lookup('env', 'EFS_DNS_NAME') }}"

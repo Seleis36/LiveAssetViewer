@@ -17,6 +17,9 @@ terraform.tfvars.local
 *.retry
 .vault_pass
 
+# kdb+ binaries (downloaded locally, not committed)
+kdb/bin/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -24,3 +27,6 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Vendor kdb+ installer (downloaded locally, not committed)
+install_kdb.sh

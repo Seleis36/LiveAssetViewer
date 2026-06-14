@@ -1,31 +1,54 @@
+import http from 'http'
 import express from 'express'
 import { Redis } from 'ioredis'
-import { pinoHttp } from 'pino-http'
+import pinoHttp from 'pino-http'
 import { config } from './config'
 import { logger } from './logger'
-import { initKdb } from './kdb/client'
+import { initKdb, onKdbConnect } from './kdb/client'
+import { startSubscriber } from './kdb/subscriber'
+import { attachWsServer } from './ws/wsServer'
 import healthRouter from './routes/health'
 import historyRouter from './routes/history'
 import { createSymbolsRouter } from './routes/symbols'
 
 const app = express()
 
+app.use((_req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*')
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  res.header('Access-Control-Allow-Headers', 'Content-Type')
+  if (_req.method === 'OPTIONS') { res.sendStatus(204); return }
+  next()
+})
 app.use(express.json())
-app.use(pinoHttp({ logger }))
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => (req.headers['x-request-id'] as string) ?? crypto.randomUUID(),
+    customLogLevel: (_req, res) => (res.statusCode >= 500 ? 'error' : 'info'),
+    serializers: {
+      req: (req) => ({ method: req.method, url: req.url, requestId: req.id }),
+      res: (res) => ({ statusCode: res.statusCode }),
+    },
+  }),
+)
 
 const redis = new Redis(config.redis.url, { lazyConnect: true })
-
 redis.on('error', (err) => logger.warn({ err }, 'Redis error'))
 
 app.use(healthRouter)
 app.use(historyRouter)
 app.use(createSymbolsRouter(redis))
 
+const httpServer = http.createServer(app)
+attachWsServer(httpServer)
+
 async function start(): Promise<void> {
   await redis.connect()
   initKdb()
+  onKdbConnect((conn) => startSubscriber(conn))
 
-  app.listen(config.port, () => {
+  httpServer.listen(config.port, () => {
     logger.info({ port: config.port }, 'Backend listening')
   })
 }
@@ -35,4 +58,4 @@ start().catch((err) => {
   process.exit(1)
 })
 
-export { app }
+export { app, httpServer }

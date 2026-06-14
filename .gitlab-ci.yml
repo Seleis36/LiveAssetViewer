@@ -1,0 +1,87 @@
+# GitLab CI/CD — converted from GitHub Actions (.github/workflows/ci.yml)
+
+stages:
+  - lint
+  - test
+  - sonarqube
+
+variables:
+  AWS_REGION: us-east-1
+
+# Cache npm downloads across jobs (keyed per branch).
+.node:
+  image: node:20
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-npm"
+    paths:
+      - frontend/.npm/
+      - backend/.npm/
+
+# Run the pipeline on pushes to main/dev and on MRs targeting main.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'
+
+# ---- LINT -------------------------------------------------
+lint:
+  extends: .node
+  stage: lint
+  before_script:
+    # Install OpenTofu 1.9.0 for Terraform validation.
+    - apt-get update && apt-get install -y curl unzip
+    - curl -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+    - chmod +x install-opentofu.sh && ./install-opentofu.sh --install-method standalone --opentofu-version 1.9.0
+    - rm install-opentofu.sh
+  script:
+    - cd frontend && npm ci --cache .npm --prefer-offline && npm run lint && cd ..
+    - cd backend && npm ci --cache .npm --prefer-offline && npm run lint && cd ..
+    - cd infra && tofu init -backend=false && tofu validate
+
+# ---- TEST -------------------------------------------------
+test:
+  extends: .node
+  stage: test
+  needs: ["lint"]
+  script:
+    - cd frontend && npm ci --cache .npm --prefer-offline && npm run test -- --coverage && cd ..
+    - cd backend && npm ci --cache .npm --prefer-offline && npm run test -- --coverage && cd ..
+  artifacts:
+    name: coverage
+    paths:
+      - frontend/coverage/lcov.info
+      - backend/coverage/lcov.info
+    expire_in: 1 week
+
+# ---- SONARQUBE --------------------------------------------
+# Self-skips until SONAR_TOKEN is set as a CI/CD variable.
+# SONAR_HOST_URL defaults to sonarcloud.io — override via CI/CD variable for self-hosted.
+sonarqube:
+  stage: sonarqube
+  needs: ["test"]
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  variables:
+    SONAR_HOST_URL: "${SONAR_HOST_URL:-https://sonarcloud.io}"
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$SONAR_TOKEN'
+  script:
+    - sonar-scanner
+
+# ---- BUILD & DEPLOY (disabled — no OIDC provider available) ----
+# AWS deployment is performed manually using local credentials:
+#   1. cd infra && tofu apply
+#   2. ansible-playbook ansible/playbooks/site.yml   (first time)
+#      ansible-playbook ansible/playbooks/deploy.yml -e image_tag=<sha>  (updates)
+# Docker images are built and pushed to ECR locally:
+#   aws ecr get-login-password | docker login ...
+#   docker build -t <ecr_url>/price-viewer/frontend:<sha> ./frontend && docker push ...
+#
+# To re-enable once cloud credentials are available:
+#   - Add an OIDC/role-based AWS auth job or use GitLab CI/CD variables for
+#     AWS credentials (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).
+#   - Add build and deploy stages below.

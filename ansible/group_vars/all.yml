@@ -1,2 +1,6 @@
-aws_region: eu-west-1
+aws_region: us-east-1
+
+# ECR_REGISTRY: export before running ansible-playbook
+# Value: <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com
+# Obtain from: tofu output ecr_registry_id (prepend with that value)
 ecr_registry: "{{ lookup('env', 'ECR_REGISTRY') }}"
