@@ -1,5 +1,5 @@
 locals {
-  roles = ["app", "kdb", "sonar"]
+  roles = ["app", "kdb", "runner"]
 }
 
 data "aws_iam_policy_document" "ec2_assume" {
@@ -96,4 +96,22 @@ resource "aws_iam_instance_profile" "ec2" {
   for_each = aws_iam_role.ec2
   name     = "pv-ec2-${each.key}-profile"
   role     = each.value.name
+}
+
+# Runner needs Secrets Manager to read the GitHub PAT for self-registration
+data "aws_iam_policy_document" "secrets_runner" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = ["arn:aws:secretsmanager:*:*:secret:pv/github/*"]
+  }
+}
+
+resource "aws_iam_policy" "secrets_runner" {
+  name   = "pv-secrets-runner"
+  policy = data.aws_iam_policy_document.secrets_runner.json
+}
+
+resource "aws_iam_role_policy_attachment" "secrets_runner" {
+  role       = aws_iam_role.ec2["runner"].name
+  policy_arn = aws_iam_policy.secrets_runner.arn
 }

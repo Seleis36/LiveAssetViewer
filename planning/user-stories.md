@@ -18,7 +18,7 @@ done. The "Depends on" line under each phase makes the critical path explicit.
 |----|-------|-------|
 | US-01 | Axel | Set up the mono-repo structure (`frontend/`, `backend/`, `kdb/`, `infra/`, `ansible/`) with a root `docker-compose.yml` so the whole stack runs locally with one command. |
 | US-02 | Baptiste | Write the root README documenting how to start each service, required env vars and how the components connect to each other. |
-| US-03 | Samy | Create a `.github/workflows/ci.yml` skeleton declaring the jobs in order (`lint` → `test` → `sonarqube` → `build` → `deploy`) so the pipeline shape is agreed before any job is filled in. |
+| US-03 | Samy | Create a `.gitlab-ci.yml` skeleton declaring the stages in order (`lint` → `test` → `sonarqube` → `build` → `deploy`) so the pipeline shape is agreed before any job is filled in. |
 
 ---
 
@@ -93,11 +93,11 @@ done. The "Depends on" line under each phase makes the critical path explicit.
 
 ---
 
-## Phase 7 — CI/CD (GitHub Actions)
+## Phase 7 — CI/CD (GitLab CI)
 
 *Depends on: Phase 6 (the deploy job invokes the Ansible `deploy.yml` playbook).*
 
-> GitHub Actions authenticates to AWS via **OIDC** — no long-lived access keys are stored as secrets.
+> GitLab CI authenticates to AWS via masked/protected CI/CD variables; the deploy job runs on the in-VPC self-hosted runner (`tags: [vpc-runner]`).
 
 | ID | Owner | Story |
 |----|-------|-------|

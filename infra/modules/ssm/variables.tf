@@ -22,7 +22,7 @@ variable "redis_url" {
 }
 
 variable "sonar_token" {
-  description = "SonarQube authentication token for GitHub Actions"
+  description = "SonarQube authentication token for GitLab CI"
   type        = string
   sensitive   = true
 }

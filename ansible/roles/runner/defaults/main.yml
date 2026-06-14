@@ -1,0 +1,8 @@
+gitlab_url: "https://gitlab.com/"
+runner_user: gitlab-runner
+runner_executor: "shell"
+runner_tags: "vpc-runner,linux,x64"
+runner_description: "{{ inventory_hostname }}"
+# Secrets Manager secret containing the GitLab runner registration token
+# (Project -> Settings -> CI/CD -> Runners -> registration token).
+runner_token_secret: "pv/gitlab/runner-token"

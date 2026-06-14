@@ -34,9 +34,9 @@ output "ec2_kdb_private_ip" {
   value       = module.ec2.kdb_private_ip
 }
 
-output "ec2_sonar_private_ip" {
-  description = "Private IP of ec2-sonar"
-  value       = module.ec2.sonar_private_ip
+output "ec2_runner_private_ip" {
+  description = "Private IP of ec2-runner (GitLab CI runner)"
+  value       = module.ec2.runner_private_ip
 }
 
 output "ssm_parameter_arns" {

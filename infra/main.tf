@@ -4,10 +4,9 @@ module "vpc" {
 }
 
 module "sg" {
-  source              = "./modules/sg"
-  environment         = var.environment
-  vpc_id              = module.vpc.vpc_id
-  sonar_allowed_cidrs = var.sonar_allowed_cidrs
+  source      = "./modules/sg"
+  environment = var.environment
+  vpc_id      = module.vpc.vpc_id
 }
 
 module "iam" {
@@ -36,15 +35,16 @@ module "elasticache" {
 }
 
 module "ec2" {
-  source                 = "./modules/ec2"
-  environment            = var.environment
-  private_app_subnet_ids = module.vpc.private_app_subnet_ids
-  app_sg_id              = module.sg.app_sg_id
-  kdb_sg_id              = module.sg.kdb_sg_id
-  sonar_sg_id            = module.sg.sonar_sg_id
-  app_instance_profile   = module.iam.app_instance_profile_name
-  kdb_instance_profile   = module.iam.kdb_instance_profile_name
-  sonar_instance_profile = module.iam.sonar_instance_profile_name
+  source                  = "./modules/ec2"
+  environment             = var.environment
+  private_app_subnet_ids  = module.vpc.private_app_subnet_ids
+  app_sg_id               = module.sg.app_sg_id
+  kdb_sg_id               = module.sg.kdb_sg_id
+  runner_sg_id            = module.sg.runner_sg_id
+  app_instance_profile    = module.iam.app_instance_profile_name
+  kdb_instance_profile    = module.iam.kdb_instance_profile_name
+  runner_instance_profile = module.iam.runner_instance_profile_name
+  ec2_key_name            = var.ec2_key_name
 }
 
 module "alb" {
@@ -57,11 +57,12 @@ module "alb" {
   acm_certificate_arn = var.acm_certificate_arn
 }
 
+# kdb_host and redis_url are wired from module outputs — no manual two-phase apply needed
 module "ssm" {
   source      = "./modules/ssm"
   environment = var.environment
-  kdb_host    = var.kdb_host
-  redis_url   = var.redis_url
+  kdb_host    = module.ec2.kdb_private_ip
+  redis_url   = module.elasticache.redis_url
   sonar_token = var.sonar_token
 }
 

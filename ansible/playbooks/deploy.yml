@@ -1,5 +1,5 @@
 ---
-# Deploy-only playbook — called by GitHub Actions on every push to main (US-24 / US-29)
+# Deploy-only playbook — called by GitLab CI on every push to main (US-24 / US-29)
 - name: Deploy kdb+
   hosts: role_kdb
   roles:

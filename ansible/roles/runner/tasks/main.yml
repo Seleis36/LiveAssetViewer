@@ -1,0 +1,82 @@
+---
+- name: Install dependencies
+  dnf:
+    name:
+      - docker
+      - git
+      - jq
+      - python3-pip
+    state: present
+
+- name: Add GitLab Runner package repository
+  get_url:
+    url: https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.rpm.sh
+    dest: /tmp/gitlab-runner-repo.sh
+    mode: "0755"
+
+- name: Configure GitLab Runner repository
+  command: bash /tmp/gitlab-runner-repo.sh
+  args:
+    creates: /etc/yum.repos.d/runner_gitlab-runner.repo
+
+- name: Install gitlab-runner
+  dnf:
+    name: gitlab-runner
+    state: present
+
+- name: Install ansible + boto3 (runner runs Ansible for deploy jobs)
+  pip:
+    name:
+      - ansible
+      - boto3
+      - botocore
+    executable: pip3
+
+- name: Install Ansible AWS collections
+  command: >
+    ansible-galaxy collection install
+    amazon.aws community.aws community.docker ansible.posix
+  become: true
+  become_user: "{{ runner_user }}"
+  changed_when: true
+
+- name: Add gitlab-runner user to docker group
+  user:
+    name: "{{ runner_user }}"
+    groups: docker
+    append: true
+
+- name: Enable and start Docker
+  systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Get GitLab runner registration token from Secrets Manager
+  command: >
+    aws secretsmanager get-secret-value
+    --secret-id {{ runner_token_secret }}
+    --query SecretString
+    --output text
+    --region us-east-1
+  register: runner_token
+  changed_when: false
+  no_log: true
+
+- name: Register GitLab Runner
+  command: >
+    gitlab-runner register --non-interactive
+    --url {{ gitlab_url }}
+    --registration-token {{ runner_token.stdout | trim }}
+    --executor {{ runner_executor }}
+    --tag-list {{ runner_tags }}
+    --description {{ runner_description }}
+    --locked=false
+    --run-untagged=false
+  no_log: true
+
+- name: Enable and start gitlab-runner service
+  systemd:
+    name: gitlab-runner
+    enabled: true
+    state: started

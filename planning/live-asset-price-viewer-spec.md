@@ -19,7 +19,7 @@
 8. [AWS Infrastructure](#8-aws-infrastructure)
 9. [Infrastructure as Code — Terraform / OpenTofu](#9-infrastructure-as-code--terraformopentofu)
 10. [Configuration Management — Ansible](#10-configuration-management--ansible)
-11. [CI/CD — GitHub Actions](#11-cicd--github-actions)
+11. [CI/CD — GitLab CI](#11-cicd--gitlab-ci)
 12. [Code Quality — SonarQube](#12-code-quality--sonarqube)
 13. [Observability — CloudWatch](#13-observability--cloudwatch)
 14. [Appendix — Directory Layout](#14-appendix--directory-layout)
@@ -87,7 +87,7 @@ Primary user is a student or developer learning how real-time financial data flo
 | Compute | EC2 on Amazon Linux 2023 (Docker + Docker Compose) |
 | IaC | Terraform / OpenTofu >= 1.7 |
 | Config management | Ansible 10 |
-| CI/CD | GitHub Actions |
+| CI/CD | GitLab CI |
 | Code quality | SonarQube Community Edition (self-hosted on EC2) |
 | Monitoring | CloudWatch Agent + CloudWatch Logs + CloudWatch Metrics |
 
@@ -593,7 +593,7 @@ Runtime configuration is stored in SSM Parameter Store. Ansible reads these at d
 +-- kdb/host        (String -- private IP of ec2-kdb)
 +-- kdb/port        (String: "5010")
 +-- redis/url       (SecureString)
-+-- sonar/token     (SecureString -- used by GitHub Actions)
++-- sonar/token     (SecureString -- used by GitLab CI)
 ```
 
 Secrets are never committed to the repository or baked into Docker images.
@@ -619,7 +619,7 @@ ansible/
 |
 +-- playbooks/
 |   +-- site.yml             -- full provisioning (all roles, run once)
-|   +-- deploy.yml           -- deploy only (app + kdb, called by GitHub Actions)
+|   +-- deploy.yml           -- deploy only (app + kdb, called by GitLab CI)
 |
 +-- group_vars/
 |   +-- all.yml              -- shared vars (region, ECR registry URL)
@@ -715,182 +715,132 @@ Sensitive values (ECR credentials, SSM paths, SonarQube admin password) are stor
 
 ---
 
-## 11. CI/CD — GitHub Actions
+## 11. CI/CD — GitLab CI
 
-### 11.1 Workflow Overview
+### 11.1 Pipeline Overview
 
 ```
-.github/workflows/ci.yml
+.gitlab-ci.yml
 
 Triggers:
-  push --> main          lint --> test --> sonar --> build --> deploy
-  pull_request --> main  lint --> test --> sonar (no build, no deploy)
+  push --> main          lint --> test --> sonarqube --> build --> deploy
+  merge request --> main lint --> test --> sonarqube (no build, no deploy)
 ```
 
-GitHub Actions authenticates to AWS via **OIDC** — no long-lived access keys are stored as secrets. The IAM role trusted by the OIDC provider grants permissions scoped to ECR push, SSM read and EC2 describe.
+The `build` and `deploy` stages authenticate to AWS using credentials supplied as
+**masked/protected GitLab CI/CD variables** (`AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`) scoped to ECR push, SSM read and EC2 describe. The
+deploy job runs on the in-VPC self-hosted GitLab runner (`tags: [vpc-runner]`).
 
-### 11.2 Full `ci.yml`
+### 11.2 Full `.gitlab-ci.yml`
 
 ```yaml
-name: CI/CD
+stages:
+  - lint
+  - test
+  - sonarqube
+  - build
+  - deploy
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-env:
+variables:
   AWS_REGION: eu-west-1
   ECR_REGISTRY: <account_id>.dkr.ecr.eu-west-1.amazonaws.com
 
-jobs:
+.node:
+  image: node:20
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-npm"
+    paths:
+      - frontend/.npm/
+      - backend/.npm/
 
-  # ---- LINT -------------------------------------------------
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+# ---- LINT -------------------------------------------------
+lint:
+  extends: .node
+  stage: lint
+  before_script:
+    - apt-get update && apt-get install -y curl unzip
+    - curl -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+    - chmod +x install-opentofu.sh && ./install-opentofu.sh --install-method standalone --opentofu-version 1.8.5
+  script:
+    - cd frontend && npm ci --cache .npm --prefer-offline && npm run lint && cd ..
+    - cd backend && npm ci --cache .npm --prefer-offline && npm run lint && cd ..
+    - cd infra && tofu init -backend=false && tofu validate
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+# ---- TEST -------------------------------------------------
+test:
+  extends: .node
+  stage: test
+  needs: ["lint"]
+  script:
+    - cd frontend && npm ci --cache .npm --prefer-offline && npm run test -- --coverage && cd ..
+    - cd backend && npm ci --cache .npm --prefer-offline && npm run test -- --coverage && cd ..
+  artifacts:
+    paths:
+      - frontend/coverage/lcov.info
+      - backend/coverage/lcov.info
+    expire_in: 1 week
 
-      - name: Lint frontend
-        run: cd frontend && npm ci && npm run lint
+# ---- SONARQUBE --------------------------------------------
+sonarqube:
+  stage: sonarqube
+  needs: ["test"]
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  variables:
+    SONAR_HOST_URL: "${SONAR_HOST_URL}"
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$SONAR_TOKEN'
+  script:
+    - sonar-scanner
 
-      - name: Lint backend
-        run: cd backend && npm ci && npm run lint
+# ---- BUILD ------------------------------------------------
+build:
+  stage: build
+  needs: ["sonarqube"]
+  image: docker:24
+  services:
+    - docker:24-dind
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  parallel:
+    matrix:
+      - SERVICE: [frontend, backend, kdb]
+  before_script:
+    - apk add --no-cache aws-cli
+    - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  script:
+    - docker build -t "$ECR_REGISTRY/price-viewer/$SERVICE:$CI_COMMIT_SHA" -t "$ECR_REGISTRY/price-viewer/$SERVICE:latest" "./$SERVICE"
+    - docker push "$ECR_REGISTRY/price-viewer/$SERVICE:$CI_COMMIT_SHA"
+    - docker push "$ECR_REGISTRY/price-viewer/$SERVICE:latest"
 
-      - name: Validate Terraform
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: 1.8.5
-      - run: cd infra && tofu init -backend=false && tofu validate
-
-  # ---- TEST -------------------------------------------------
-  test:
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Test frontend
-        run: cd frontend && npm ci && npm run test -- --coverage
-
-      - name: Test backend
-        run: cd backend && npm ci && npm run test -- --coverage
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: |
-            frontend/coverage/lcov.info
-            backend/coverage/lcov.info
-
-  # ---- SONARQUBE --------------------------------------------
-  sonarqube:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: coverage
-
-      - name: SonarQube scan
-        uses: SonarSource/sonarqube-scan-action@v3
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-      - name: SonarQube quality gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-  # ---- BUILD ------------------------------------------------
-  build:
-    runs-on: ubuntu-latest
-    needs: sonarqube
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        service: [frontend, backend, kdb]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::<account_id>:role/github-actions-role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Log in to ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push ${{ matrix.service }}
-        uses: docker/build-push-action@v5
-        with:
-          context: ./${{ matrix.service }}
-          push: true
-          tags: |
-            ${{ env.ECR_REGISTRY }}/price-viewer/${{ matrix.service }}:${{ github.sha }}
-            ${{ env.ECR_REGISTRY }}/price-viewer/${{ matrix.service }}:latest
-          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/price-viewer/${{ matrix.service }}:latest
-          cache-to: type=inline
-
-  # ---- DEPLOY -----------------------------------------------
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::<account_id>:role/github-actions-role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Install Ansible + AWS collections
-        run: |
-          pip install ansible boto3 botocore
-          ansible-galaxy collection install amazon.aws community.docker community.aws
-
-      - name: Write Vault password
-        run: echo "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > .vault_pass
-
-      - name: Run deploy playbook
-        run: |
-          ansible-playbook ansible/playbooks/deploy.yml \
-            --vault-password-file .vault_pass \
-            -e "image_tag=${{ github.sha }}"
-        env:
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+# ---- DEPLOY -----------------------------------------------
+deploy:
+  stage: deploy
+  needs: ["build"]
+  tags: [vpc-runner]          # runs on the in-VPC self-hosted runner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  variables:
+    AWS_DEFAULT_REGION: "$AWS_REGION"
+  before_script:
+    - echo "$ANSIBLE_VAULT_PASSWORD" > .vault_pass
+  script:
+    - ansible-playbook ansible/playbooks/deploy.yml
+        --vault-password-file .vault_pass
+        -e "image_tag=$CI_COMMIT_SHA"
+  after_script:
+    - rm -f .vault_pass
 ```
 
 ### 11.3 Branch Strategy
 
 | Event | Jobs run |
 |---|---|
-| Pull request to `main` | lint, test, sonarqube |
+| Merge request to `main` | lint, test, sonarqube |
 | Push to `main` | lint, test, sonarqube, build (x3), deploy |
 
 ---
@@ -1054,13 +1004,11 @@ price-viewer/
 |   |   +-- sonarqube/         # Deploy SonarQube
 |   +-- playbooks/
 |   |   +-- site.yml           # Full provisioning (run once)
-|   |   +-- deploy.yml         # Deploy only (called by GitHub Actions)
+|   |   +-- deploy.yml         # Deploy only (called by GitLab CI)
 |   +-- group_vars/
 |   +-- ansible.cfg
 |
-+-- .github/
-|   +-- workflows/
-|       +-- ci.yml             # GitHub Actions pipeline
++-- .gitlab-ci.yml             # GitLab CI pipeline
 |
 +-- sonar-project.properties   # SonarQube project config
 +-- docker-compose.yml         # Local dev stack

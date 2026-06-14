@@ -1,6 +1,6 @@
-# Manual Deployment Runbook — AWS + SonarQube
+# Manual Deployment Runbook — AWS
 
-CI (GitHub Actions) only runs lint, tests and the SonarQube scan.
+CI (GitLab CI, `.gitlab-ci.yml`) runs lint, tests, and the SonarQube scan.
 Because no IAM OIDC provider is available, **everything that touches AWS is done
 locally** with your own credentials: Terraform/OpenTofu provisions, a shell script
 pushes images to ECR, Ansible configures the EC2 instances.
@@ -30,19 +30,45 @@ cd infra/bootstrap
 tofu init && tofu apply        # creates S3 bucket pv-tf-state + DynamoDB lock table
 ```
 
-Store the kdb+ licence in Secrets Manager (the kdb Ansible role reads it):
+Store the kdb+ licence and the GitLab runner registration token in Secrets Manager
+(read by Ansible roles):
 
 ```sh
 aws secretsmanager create-secret \
   --name pv/kdb/license \
   --secret-string file://$HOME/.kx/kc.lic \
   --region us-east-1
+
+# GitLab runner registration token
+# (GitLab project → Settings → CI/CD → Runners → registration token)
+aws secretsmanager create-secret \
+  --name pv/gitlab/runner-token \
+  --secret-string "glrt-YOURTOKEN" \
+  --region us-east-1
+```
+
+Create an EC2 key pair (used by Ansible SSH from the runner to other instances):
+
+```sh
+aws ec2 create-key-pair --key-name pv-key --query KeyMaterial --output text > ~/.ssh/pv-key.pem
+chmod 600 ~/.ssh/pv-key.pem
 ```
 
 (Optional, HTTPS) Request an ACM certificate in us-east-1 for your domain,
 validate it via DNS, note the ARN. Skip for HTTP-only.
 
-## 2. Provision infrastructure — phase 1
+## 2. Set up SonarQube / SonarCloud
+
+1. Sign in at sonarcloud.io with your GitLab account (or use a self-hosted SonarQube server).
+2. Create a new project for this repo; note the **organization key**.
+3. Set `sonar.organization=<your-org-key>` in `sonar-project.properties`.
+4. My Account → Security → Generate token.
+5. GitLab project → Settings → CI/CD → Variables → add `SONAR_TOKEN`
+   (mask it; the `sonarqube` job self-skips until this variable exists).
+   `SONAR_HOST_URL` defaults to `https://sonarcloud.io`; set it as a CI/CD
+   variable only when pointing at a self-hosted SonarQube server.
+
+## 3. Provision infrastructure
 
 Edit `infra/terraform.tfvars`:
 
@@ -50,8 +76,9 @@ Edit `infra/terraform.tfvars`:
 aws_region          = "us-east-1"
 environment         = "production"
 alarm_email         = "axel.maral@gmail.com"
-sonar_allowed_cidrs = ["<your-ip>/32"]      # who may reach SonarQube :9000
-acm_certificate_arn = ""                     # or the ACM ARN for HTTPS
+ec2_key_name        = "pv-key"          # the key pair created in step 1
+acm_certificate_arn = ""                # or the ACM ARN for HTTPS
+sonar_token         = "<SonarCloud token from step 2>"
 ```
 
 ```sh
@@ -59,23 +86,11 @@ cd infra
 tofu init && tofu apply
 ```
 
+A single `tofu apply` is now sufficient — `kdb_host` and `redis_url` are wired
+directly from module outputs; no manual two-phase apply is needed.
+
 Note the outputs: `alb_dns_name`, `ecr_repository_urls`, `efs_dns_name`,
-`redis_url`, `ec2_kdb_private_ip`.
-
-## 3. Provision — phase 2 (SSM parameters)
-
-`kdb_host` and `redis_url` only exist after phase 1. Feed them back:
-
-```hcl
-# append to terraform.tfvars (never commit — gitignored)
-kdb_host    = "<ec2_kdb_private_ip output>"
-redis_url   = "<redis_url output>"
-sonar_token = "<token — see step 6, PLACEHOLDER until then>"
-```
-
-```sh
-tofu apply        # populates /pv/kdb/host, /pv/redis/url, /pv/sonar/token in SSM
-```
+`ec2_runner_private_ip`.
 
 ## 4. Build and push Docker images
 
@@ -83,58 +98,39 @@ tofu apply        # populates /pv/kdb/host, /pv/redis/url, /pv/sonar/token in SS
 ./scripts/push-images.sh v1
 ```
 
-Builds frontend, backend and kdb images and pushes them to ECR.
+Builds frontend, backend, and kdb images and pushes them to ECR.
 The frontend is intentionally built **without** `VITE_API_URL`/`VITE_WS_URL`:
 it uses same-origin `/api` + `/ws` URLs, which the ALB routes to the backend.
 
 ## 5. Configure instances with Ansible
 
-⚠️ **Network path**: `ansible.cfg` connects over SSH to **private IPs**
-(dynamic inventory tag `Env=production`, groups by `Role`). From your machine
-this only works through one of:
-- an SSM port-forwarding session / SSM default host management,
-- a bastion host in the public subnet (`ProxyJump` in `~/.ssh/config`),
-- running Ansible from a small EC2/Cloud9 inside the VPC.
-
-Then:
+The runner (ec2-runner) lives inside the VPC and can reach all other instances.
+For the **initial** bootstrap you still run Ansible from your local machine:
 
 ```sh
 export ECR_REGISTRY=<account_id>.dkr.ecr.us-east-1.amazonaws.com
 export EFS_DNS_NAME=<efs_dns_name output>
+export SSH_KEY_PATH=~/.ssh/pv-key.pem
 
 cd ansible
 ansible-inventory --graph                          # sanity-check inventory
-ansible-playbook playbooks/site.yml -e image_tag=v1   # first full provisioning
+ansible-playbook playbooks/site.yml \
+  -e image_tag=v1 \
+  --private-key $SSH_KEY_PATH
 ```
 
-`site.yml` runs: common → kdb (licence from Secrets Manager, EFS mount,
-container) → app (SSM params → .env → docker compose) → sonarqube.
+`site.yml` runs: common → kdb → app → runner.
 
-## 6. SonarQube
+The `runner` role:
+- Installs Docker, the `gitlab-runner` package, Ansible, boto3, and the AWS
+  collections on ec2-runner.
+- Fetches the GitLab runner registration token from Secrets Manager, then
+  registers the runner (shell executor, tag `vpc-runner`) and starts the
+  `gitlab-runner` systemd service.
+- After this, Ansible deploy jobs in CI run **on the runner** inside the VPC with
+  full access to all private IPs.
 
-The sonarqube role starts SonarQube on `ec2-sonar:9000` (private subnet,
-reachable only from `sonar_allowed_cidrs` via your VPC path).
-
-1. Open `http://<ec2_sonar_private_ip>:9000` (through the same tunnel/bastion),
-   log in `admin/admin`, change the password.
-2. Create project with key **`price-viewer`** (must match `sonar-project.properties`).
-3. My Account → Security → Generate token (type: *Project Analysis Token*).
-4. GitHub repo → Settings → Secrets and variables → Actions → add:
-   - `SONAR_TOKEN` = the token
-   - `SONAR_HOST_URL` = SonarQube URL **reachable from GitHub runners**
-
-⚠️ **GitHub-hosted runners cannot reach a private-subnet SonarQube.**
-Pick one:
-- **SonarCloud** (simplest): use sonarcloud.io, `SONAR_HOST_URL=https://sonarcloud.io`,
-  add `sonar.organization` to `sonar-project.properties`;
-- expose SonarQube publicly (new ALB rule/listener + open SG to 0.0.0.0/0 — weak);
-- a **self-hosted GitHub runner** inside the VPC.
-
-5. Update `sonar_token` in `terraform.tfvars` and `tofu apply` (SSM param, step 3).
-
-Until the secrets are set, the CI sonarqube job runs but its steps self-skip.
-
-## 7. Verify the deployment
+## 6. Verify the deployment
 
 ```sh
 ALB=$(cd infra && tofu output -raw alb_dns_name)
@@ -143,32 +139,45 @@ curl http://$ALB/api/symbols     # 5 symbols through the backend
 # browser: http://$ALB → chart renders, candles update, indicator green
 ```
 
-CloudWatch: dashboard + alarms went out with phase 1; confirm the SNS
+CloudWatch: dashboard + alarms went out with `tofu apply`; confirm the SNS
 subscription email and click the confirmation link.
 
-## 8. Rolling updates (every release)
+## 7. Rolling updates (every release)
 
 ```sh
 ./scripts/push-images.sh v2
 cd ansible && ansible-playbook playbooks/deploy.yml -e image_tag=v2
 ```
 
-## 9. Teardown
+After the runner is bootstrapped, this can also run via GitLab CI in a deploy
+job with `tags: [vpc-runner]`.
+
+## 8. Teardown and restart (cost management)
+
+NAT Gateway + ALB + 3 EC2 + ElastiCache ≈ several $/day — destroy when idle.
 
 ```sh
+# Destroy everything (bootstrap bucket/table survive)
 cd infra && tofu destroy
-# bootstrap bucket/table survive on purpose; empty the bucket before
-# destroying infra/bootstrap if you want a full cleanup
+
+# Re-provision from scratch with one command:
+./scripts/cycle.sh v1
+# optionally: ./scripts/cycle.sh v2 (uses that image tag)
 ```
+
+`cycle.sh` runs: destroy → apply → push-images → ansible site.yml, then prints the ALB URL.
+Set `SSH_KEY_PATH=~/.ssh/pv-key.pem` in your environment (the runner registration
+token is read from Secrets Manager, not passed in).
 
 ---
 
-## Known gaps / decisions still open
+## Architecture decisions
 
-- **SonarQube reachability from CI** (step 6) — needs your decision.
-- **Ansible network path** (step 5) — bastion, SSM tunnel, or in-VPC runner.
-- The kdb personal licence may be machine/hostname-bound — confirm `kc.lic`
-  is valid on the EC2 host (check `docker logs kdb` after the kdb play).
-- `tofu validate` runs in CI without AWS credentials (`-backend=false`);
-  a full `tofu plan` needs local credentials and is not exercised by CI.
-- NAT Gateway + ALB + 3 EC2 + ElastiCache ≈ several $/day — destroy when idle.
+- **SonarCloud** (not self-hosted): scan job uses `https://sonarcloud.io` — no EC2 needed,
+  reachable from GitLab-hosted (shared) runners. Set `sonar.organization` in `sonar-project.properties`.
+- **In-VPC GitLab CI runner** (ec2-runner, t3.small): Ansible deploy jobs run inside the
+  VPC so they can SSH to private instances without a bastion or SSM tunnel.
+- **Single `tofu apply`**: `kdb_host` and `redis_url` are now wired as module-to-module
+  references; the SSM parameters are populated automatically in one pass.
+- **kdb+ licence**: stored in Secrets Manager at `pv/kdb/license`; read by the kdb Ansible
+  role at deploy time. Confirm licence is valid on the EC2 host via `docker logs kdb`.

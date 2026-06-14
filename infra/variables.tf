@@ -10,21 +10,8 @@ variable "environment" {
   default     = "production"
 }
 
-variable "kdb_host" {
-  description = "Private IP of ec2-kdb — set to PLACEHOLDER before first apply; update after EC2 provisioned"
-  type        = string
-  default     = "PLACEHOLDER"
-}
-
-variable "redis_url" {
-  description = "ElastiCache Redis connection URL (output of elasticache module after apply)"
-  type        = string
-  sensitive   = true
-  default     = "redis://PLACEHOLDER:6379"
-}
-
 variable "sonar_token" {
-  description = "SonarQube token stored in SSM for CI scans"
+  description = "SonarCloud token stored in SSM for CI scans"
   type        = string
   sensitive   = true
   default     = "PLACEHOLDER"
@@ -42,8 +29,8 @@ variable "alarm_email" {
   default     = ""
 }
 
-variable "sonar_allowed_cidrs" {
-  description = "CIDRs allowed to reach SonarQube port 9000"
-  type        = list(string)
-  default     = []
+variable "ec2_key_name" {
+  description = "Name of an existing EC2 key pair to attach to all instances (for SSH/Ansible from runner)"
+  type        = string
+  default     = ""
 }

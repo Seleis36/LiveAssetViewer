@@ -1,5 +1,5 @@
 ---
-# Full provisioning — run once after Terraform creates the instances (US-21 onwards)
+# Full provisioning — run once after Terraform creates the instances
 - name: Common setup (all instances)
   hosts: all
   roles:
@@ -15,7 +15,7 @@
   roles:
     - app
 
-- name: Deploy SonarQube
-  hosts: role_sonar
+- name: Bootstrap GitLab CI runner
+  hosts: role_runner
   roles:
-    - sonarqube
+    - runner
