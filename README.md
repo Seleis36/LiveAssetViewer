@@ -38,7 +38,7 @@ docker compose up --build
 
 | Service | URL |
 |---|---|
-| Frontend (nginx) | http://localhost:8080 |
+| Frontend (Vite dev server) | http://localhost:5173 |
 | Backend (Express) | http://localhost:3000 |
 | kdb+ tickerplant | localhost:5010 |
 | kdb+ RDB | localhost:5011 |
@@ -54,7 +54,7 @@ docker compose up --build
 | `PORT` | Backend listen port (default `3000`) |
 | `LOG_LEVEL` | Pino log level (default `info`) |
 | `KDB_HOST` | kdb+ RDB hostname (default `kdb`) |
-| `KDB_PORT` | kdb+ RDB port (default `5011`) |
+| `KDB_PORT` | kdb+ tickerplant port used by backend (default `5010`) |
 | `REDIS_URL` | Redis connection URL (default `redis://redis:6379`) |
 
 ---
@@ -63,11 +63,11 @@ docker compose up --build
 
 ```
 frontend/    React 18 + Vite + TypeScript + Zustand + Recharts
-backend/     Express 4 + WebSocket + node-q + Pino
+backend/     Express 5 + WebSocket + node-q + Pino
 kdb/q/       tick.q · r.q · schemas.q · bars.q · feed/synthetic.q
 infra/       OpenTofu modules (vpc, sg, iam, ec2, alb, ecr, efs, elasticache, ssm, cloudwatch)
 ansible/     Roles: common · app · kdb · sonarqube
-.github/     CI/CD workflow (lint → test → sonar → build → deploy)
+.gitlab-ci.yml GitLab CI pipeline (lint → test → sonarqube)
 ```
 
 ---
@@ -76,10 +76,8 @@ ansible/     Roles: common · app · kdb · sonarqube
 
 | Trigger | Jobs |
 |---|---|
-| PR → `main` | lint · test · sonarqube |
-| Push → `main` | lint · test · sonarqube · build (×3) · deploy |
-
-AWS credentials are obtained via OIDC — no long-lived secrets stored in GitHub.
+| Merge Request → `main` | lint · test · sonarqube |
+| Push → `main` / `dev` | lint · test · sonarqube |
 
 ---
 
