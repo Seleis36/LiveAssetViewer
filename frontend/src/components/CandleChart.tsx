@@ -9,6 +9,7 @@ import {
   Cell,
   CartesianGrid,
 } from 'recharts'
+import type { BarProps } from 'recharts'
 import dayjs from 'dayjs'
 import { Candle } from '../api/client'
 
@@ -141,8 +142,7 @@ export default function CandleChart({ candles }: Props) {
           />
           <Bar
             dataKey="bodyHigh"
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            shape={candleShape as any}
+            shape={candleShape as unknown as BarProps['shape']}
             isAnimationActive={false}
           >
             {rows.map((r, i) => (
